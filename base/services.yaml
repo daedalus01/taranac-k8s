@@ -1,0 +1,65 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taranac-vip-tcp
+  namespace: taranac
+spec:
+  type: LoadBalancer
+  selector:
+    app: taranac-core
+  ports:
+    - name: http
+      port: 80
+      targetPort: 80
+      protocol: TCP
+    - name: https
+      port: 443
+      targetPort: 443
+      protocol: TCP
+    - name: tacacs
+      port: 49
+      targetPort: 49
+      protocol: TCP
+    - name: tacacs-tls
+      port: 6049
+      targetPort: 6049
+      protocol: TCP
+    - name: est-gateway
+      port: 8445
+      targetPort: 8443
+      protocol: TCP
+    - name: scep-http
+      port: 8446
+      targetPort: 8080
+      protocol: TCP
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: taranac-vip-udp
+  namespace: taranac
+spec:
+  type: LoadBalancer
+  selector:
+    app: taranac-core
+  ports:
+    - name: radius-auth
+      port: 1812
+      targetPort: 1812
+      protocol: UDP
+    - name: radius-acct
+      port: 1813
+      targetPort: 1813
+      protocol: UDP
+    - name: nac-auth
+      port: 1814
+      targetPort: 1814
+      protocol: UDP
+    - name: nac-acct
+      port: 1815
+      targetPort: 1815
+      protocol: UDP
+    - name: nac-coa
+      port: 3799
+      targetPort: 3799
+      protocol: UDP

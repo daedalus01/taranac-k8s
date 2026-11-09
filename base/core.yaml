@@ -1,0 +1,341 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: taranac-core-nodes
+  namespace: taranac
+spec:
+  clusterIP: None
+  selector:
+    app: taranac-core
+  ports:
+    - name: https-api
+      port: 8000
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: taranac-core
+  namespace: taranac
+spec:
+  serviceName: "taranac-core-nodes"
+  replicas: 1
+  selector:
+    matchLabels:
+      app: taranac-core
+  template:
+    metadata:
+      labels:
+        app: taranac-core
+    spec:
+      containers:
+        - name: edge
+          image: ghcr.io/taranaclabs/taranac/edge:latest
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    while true; do
+                      if [ -f /etc/nginx/conf.d/taranac.conf ]; then
+                        sed -i 's/127.0.0.11/10.43.0.10/g' /etc/nginx/conf.d/taranac.conf
+                        sed -i 's/frontend;/frontend.taranac.svc.cluster.local;/g' /etc/nginx/conf.d/taranac.conf
+                        if nginx -s reload 2>/dev/null; then
+                          break
+                        fi
+                      fi
+                      sleep 1
+                    done
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TZ
+            - name: TARANAC_DOMAIN
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TARANAC_DOMAIN
+            - name: TARANAC_EXTRA_ADDRESSES
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TARANAC_EXTRA_ADDRESSES
+          ports:
+            - name: http
+              containerPort: 80
+            - name: https
+              containerPort: 443
+          volumeMounts:
+            - name: taranac-state
+              mountPath: /etc/taranac/tls-selfsigned
+              subPath: tls-selfsigned
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+
+        - name: api
+          image: ghcr.io/taranaclabs/taranac/api:latest
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TZ
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: MASTER_KEY
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: SECRET_KEY
+            - name: EST_PROXY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: EST_PROXY_KEY
+            - name: EST_GATEWAY_PORT
+              value: "8445"
+            - name: SCEP_HTTP_PORT
+              value: "8446"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: POSTGRES_PASSWORD
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://taranac:$(POSTGRES_PASSWORD)@postgres:5432/taranac"
+            - name: REPORTS_RENDERER_URL
+              value: "https://taranac-renderer:8443"
+            - name: REPORTS_RENDERER_CA_CERT
+              value: "/opt/taranac/certs/ca.crt"
+            - name: REPORTS_RENDERER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: REPORTS_RENDERER_API_KEY
+          volumeMounts:
+            - name: host-etc
+              mountPath: /host/etc
+              readOnly: true
+            - name: tacacs-cfg
+              mountPath: /etc/tac_plus
+            - name: radius-cfg
+              mountPath: /mnt/radius_config
+            - name: nac-cfg
+              mountPath: /mnt/nac_config
+            - name: captive-portal-cfg
+              mountPath: /mnt/captive_portal_config
+            - name: winbind-cfg
+              mountPath: /mnt/winbind_config
+            - name: winbind-runtime
+              mountPath: /mnt/winbind_runtime
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+            - name: taranac-state
+              mountPath: /app/backups
+              subPath: backups
+
+        - name: winbind
+          image: ghcr.io/taranaclabs/taranac/winbind:latest
+          volumeMounts:
+            - name: winbind-cfg
+              mountPath: /etc/samba
+            - name: winbind-socket
+              mountPath: /var/lib/samba/winbindd_privileged
+            - name: winbind-run
+              mountPath: /var/run/samba/winbindd
+            - name: winbind-runtime
+              mountPath: /var/lib/taranac-winbind
+
+        - name: tacacs
+          image: ghcr.io/taranaclabs/taranac/tacacs:latest
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TZ
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: POSTGRES_PASSWORD
+            - name: TACACS_DB_URL
+              value: "postgresql://taranac:$(POSTGRES_PASSWORD)@postgres:5432/taranac"
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: MASTER_KEY
+          ports:
+            - name: tacacs-tcp
+              containerPort: 49
+            - name: tacacs-tls
+              containerPort: 6049
+          volumeMounts:
+            - name: tacacs-cfg
+              mountPath: /etc/tac_plus
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+
+        - name: radius
+          image: ghcr.io/taranaclabs/taranac/radius:latest
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TZ
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: POSTGRES_PASSWORD
+            - name: RADIUS_DB_URL
+              value: "postgresql://taranac:$(POSTGRES_PASSWORD)@postgres:5432/taranac"
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: MASTER_KEY
+            - name: SMB_CONF_PATH
+              value: "/etc/raddb/smb.conf"
+          ports:
+            - name: radius-auth
+              containerPort: 1812
+              protocol: UDP
+            - name: radius-acct
+              containerPort: 1813
+              protocol: UDP
+          volumeMounts:
+            - name: radius-cfg
+              mountPath: /etc/raddb
+            - name: winbind-socket
+              mountPath: /var/lib/samba/winbindd_privileged
+            - name: winbind-run
+              mountPath: /var/run/samba/winbindd
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+
+        - name: nac
+          image: ghcr.io/taranaclabs/taranac/nac:latest
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TZ
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: POSTGRES_PASSWORD
+            - name: NAC_DB_URL
+              value: "postgresql://taranac:$(POSTGRES_PASSWORD)@postgres:5432/taranac"
+            - name: MASTER_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: MASTER_KEY
+            - name: SMB_CONF_PATH
+              value: "/etc/raddb/smb.conf"
+          ports:
+            - name: nac-auth
+              containerPort: 1814
+              protocol: UDP
+            - name: nac-acct
+              containerPort: 1815
+              protocol: UDP
+            - name: nac-coa
+              containerPort: 3799
+              protocol: UDP
+          volumeMounts:
+            - name: nac-cfg
+              mountPath: /etc/raddb
+            - name: winbind-socket
+              mountPath: /var/lib/samba/winbindd_privileged
+            - name: winbind-run
+              mountPath: /var/run/samba/winbindd
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+
+        - name: est-gateway
+          image: ghcr.io/taranaclabs/taranac/est-gateway:latest
+          lifecycle:
+            postStart:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    while true; do
+                      if [ -f /etc/nginx/templates/est.conf.template ] && [ -f /etc/nginx/templates/est-proxy.conf.template ]; then
+                        sed -i 's/127.0.0.11/10.43.0.10/g' /etc/nginx/templates/est.conf.template
+                        sed -i 's/set \$api_upstream api;/set \$api_upstream api.taranac.svc.cluster.local;/g' /etc/nginx/templates/est-proxy.conf.template
+                        sed -i 's/127.0.0.11/10.43.0.10/g' /etc/nginx/conf.d/default.conf
+                        sed -i 's/set \$api_upstream api;/set \$api_upstream api.taranac.svc.cluster.local;/g' /etc/nginx/snippets/est-proxy.conf
+                        if nginx -s reload 2>/dev/null; then
+                          break
+                        fi
+                      fi
+                      sleep 1
+                    done
+          env:
+            - name: TZ
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: TZ
+            - name: EST_GATEWAY_PORT
+              value: "8443"
+            - name: EST_PROXY_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: taranac-secrets
+                  key: EST_PROXY_KEY
+          ports:
+            - name: est-https
+              containerPort: 8443
+            - name: scep-http
+              containerPort: 8080
+          volumeMounts:
+            - name: nac-cfg
+              mountPath: /mnt/nac_config
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+              readOnly: true
+      volumes:
+        - name: host-etc
+          hostPath:
+            path: /etc
+            type: Directory
+        - name: tacacs-cfg
+          emptyDir: {}
+        - name: radius-cfg
+          emptyDir: {}
+        - name: nac-cfg
+          emptyDir: {}
+        - name: captive-portal-cfg
+          emptyDir: {}
+        - name: winbind-cfg
+          emptyDir: {}
+        - name: winbind-runtime
+          emptyDir: {}
+        - name: winbind-socket
+          emptyDir: {}
+        - name: winbind-run
+          emptyDir: {}
+        - name: taranac-state
+          persistentVolumeClaim:
+            claimName: taranac-state-pvc

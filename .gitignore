@@ -1,0 +1,14 @@
+# Active configuration and credentials
+**/config.env
+**/secrets.env
+**/*.secret.yaml
+.env
+
+# Active local patches
+overlays/local/metallb-patch.yaml
+overlays/local/storage-patch.yaml
+
+# Editor and OS noise
+.DS_Store
+*.swp
+*.bak

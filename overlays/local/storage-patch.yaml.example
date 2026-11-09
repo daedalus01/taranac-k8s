@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taranac-db-pvc
+  namespace: taranac
+spec:
+  storageClassName: local-path
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: taranac-state-pvc
+  namespace: taranac
+spec:
+  storageClassName: local-path
