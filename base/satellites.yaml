@@ -156,10 +156,28 @@ spec:
                   key: POSTGRES_PASSWORD
             - name: TARANAC_MFA_DATABASE_URL
               value: "postgresql://taranac:$(POSTGRES_PASSWORD)@postgres:5432/taranac_mfa"
+            - name: TARANAC_MFA_SECRET_KEY_FILE
+              value: "/opt/taranac/data/enckey"
+            - name: TARANAC_MFA_TLS_CERT
+              value: "/opt/taranac/certs/mfa/server.crt"
+            - name: TARANAC_MFA_TLS_KEY
+              value: "/opt/taranac/certs/mfa/server.key"
             - name: INTERNAL_TLS_VERIFY
               value: "false"
           ports:
             - containerPort: 8443
+          volumeMounts:
+            - name: taranac-state
+              mountPath: /opt/taranac/certs
+              subPath: certs
+              readOnly: true
+            - name: taranac-state
+              mountPath: /opt/taranac/data
+              subPath: mfa_data
+      volumes:
+        - name: taranac-state
+          persistentVolumeClaim:
+            claimName: taranac-state-pvc
 ---
 apiVersion: v1
 kind: Service
