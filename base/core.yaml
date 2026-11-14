@@ -27,6 +27,12 @@ spec:
       labels:
         app: taranac-core
     spec:
+      dnsConfig:
+        options:
+          - name: timeout
+            value: "2"
+          - name: attempts
+            value: "2"
       containers:
         - name: edge
           image: ghcr.io/taranaclabs/taranac/edge:latest
@@ -119,6 +125,12 @@ spec:
                 secretKeyRef:
                   name: taranac-secrets
                   key: REPORTS_RENDERER_API_KEY
+            - name: PUBLIC_BASE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: taranac-env
+                  key: PUBLIC_BASE_URL
+                  optional: true
           volumeMounts:
             - name: host-etc
               mountPath: /host/etc
@@ -141,6 +153,15 @@ spec:
             - name: taranac-state
               mountPath: /app/backups
               subPath: backups
+            - name: taranac-state
+              mountPath: /opt/taranac/vendor_dictionaries
+              subPath: vendor_dictionaries
+            - name: tacacs-logs
+              mountPath: /app/logs/tacacs
+            - name: radius-logs
+              mountPath: /app/logs/radius
+            - name: nac-logs
+              mountPath: /app/logs/nac
 
         - name: winbind
           image: ghcr.io/taranaclabs/taranac/winbind:latest
@@ -153,6 +174,9 @@ spec:
               mountPath: /var/run/samba/winbindd
             - name: winbind-runtime
               mountPath: /var/lib/taranac-winbind
+            - name: taranac-state
+              mountPath: /var/lib/samba
+              subPath: winbind_state
 
         - name: tacacs
           image: ghcr.io/taranaclabs/taranac/tacacs:latest
@@ -185,6 +209,8 @@ spec:
             - name: taranac-state
               mountPath: /opt/taranac/certs
               subPath: certs
+            - name: tacacs-logs
+              mountPath: /var/log/taranac
 
         - name: radius
           image: ghcr.io/taranaclabs/taranac/radius:latest
@@ -225,6 +251,8 @@ spec:
             - name: taranac-state
               mountPath: /opt/taranac/certs
               subPath: certs
+            - name: radius-logs
+              mountPath: /var/log/taranac
 
         - name: nac
           image: ghcr.io/taranaclabs/taranac/nac:latest
@@ -268,6 +296,12 @@ spec:
             - name: taranac-state
               mountPath: /opt/taranac/certs
               subPath: certs
+            - name: nac-logs
+              mountPath: /var/log/taranac
+            - name: taranac-state
+              mountPath: /opt/nac_module/vendor_dictionaries
+              subPath: vendor_dictionaries
+              readOnly: true
 
         - name: est-gateway
           image: ghcr.io/taranaclabs/taranac/est-gateway:latest
@@ -335,6 +369,12 @@ spec:
         - name: winbind-socket
           emptyDir: {}
         - name: winbind-run
+          emptyDir: {}
+        - name: tacacs-logs
+          emptyDir: {}
+        - name: radius-logs
+          emptyDir: {}
+        - name: nac-logs
           emptyDir: {}
         - name: taranac-state
           persistentVolumeClaim:
